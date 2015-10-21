@@ -1,0 +1,947 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Data::Dumper;
+use JSON::PP;
+use Term::ANSIColor;
+use Getopt::Long;
+use Pod::Usage;
+
+my @sets = ('Basic',
+            'Classic',
+            'Naxxramas',
+            'Goblins vs Gnomes',
+            'Blackrock Mountain',
+            'The Grand Tournament',
+            'Promotion',
+            'Reward');
+my @types = ('Free',
+             'Common',
+             'Rare',
+             'Epic',
+             'Legendary');
+my @card_type = ('Weapon',
+                 'Spell',
+                 'Minion'
+                );
+my @classes = ('Druid',
+               'Hunter',
+               'Mage',
+               'Paladin',
+               'Priest',
+               'Rogue',
+               'Shaman',
+               'Warlock',
+               'Warrior',
+               'Neutral');
+
+my %labels = ( 'by_set' => \@sets,
+               'by_class' => \@classes
+             );
+my %labels_max = ( 'by_set' => length "by_set",
+                   'by_class' => length "by_class"
+                 );
+foreach my $l ('by_set', 'by_class') {
+  foreach my $il (@{$labels{$l}}) {
+    $labels_max{$l} = length $il > $labels_max{$l} ? length $il : $labels_max{$l};
+  }
+}
+
+# some numbers from
+# https://docs.google.com/spreadsheets/d/1VdqhpiremPEiIKmS1YI8_8HkdYb57wb8cD4ZLnxtffU/edit#gid=579362856
+my $occurrence_probability_normal =
+  {
+    'Common' => 69.90,
+    'Rare' => 21.50,
+    'Epic' => 4.21,
+    'Legendary' => 1.08
+  };
+my $occurrence_probability_golden =
+  {
+    'Common' => 1.51,
+    'Rare' => 1.41,
+    'Epic' => 0.29,
+    'Legendary' => 0.11
+  };
+my $occurrence_probability;
+foreach my $type (keys %{$occurrence_probability_normal}) {
+  $occurrence_probability->{$type} =
+    $occurrence_probability_normal->{$type}
+    + $occurrence_probability_golden->{$type};
+}
+
+my $costs = { 'Free' => 0,
+              'Common' => 40,
+              'Rare' => 100,
+              'Epic' => 400,
+              'Legendary' => 1600 };
+my $golden_costs = { 'Free'      => 0,
+                     'Common'    => 400,
+                     'Rare'      => 800,
+                     'Epic'      => 1600,
+                     'Legendary' => 3200 };
+my $de_costs = { 'Free'   => 0,
+                 'Common' => 5,
+                 'Rare'   => 20,
+                 'Epic'   => 100,
+                 'Legendary' => 400 };
+my $golden_de_costs = { 'Free'      => 0,
+                        'Common'    => 50,
+                        'Rare'      => 100,
+                        'Epic'      => 400,
+                        'Legendary' => 1600 };
+
+my $free_not_common =  { "Ironbark Protector" => 1,
+                         "Moonfire" => 1,
+                         "Savage Roar" => 1,
+                         "Starfire" => 1,
+                         "Swipe" => 1,
+                         "Animal Companion" => 1,
+                         "Hunter's Mark" => 1,
+                         "Kill Command" => 1,
+                         "Starving Buzzard" => 1,
+                         "Tundra Rhino" => 1,
+                         "Flamestrike" => 1,
+                         "Frost Nova" => 1,
+                         "Frostbolt" => 1,
+                         "Mirror Image" => 1,
+                         "Water Elemental" => 1,
+                         "Acidic Swamp Ooze" => 1,
+                         "Archmage" => 1,
+                         "Bluegill Warrior" => 1,
+                         "Booty Bay Bodyguard" => 1,
+                         "Chillwind Yeti" => 1,
+                         "Core Hound" => 1,
+                         "Dalaran Mage" => 1,
+                         "Darkscale Healer" => 1,
+                         "Dragonling Mechanic" => 1,
+                         "Elven Archer" => 1,
+                         "Frostwolf Grunt" => 1,
+                         "Frostwolf Warlord" => 1,
+                         "Gnomish Inventor" => 1,
+                         "Goldshire Footman" => 1,
+                         "Grimscale Oracle" => 1,
+                         "Gurubashi Berserker" => 1,
+                         "Ironforge Rifleman" => 1,
+                         "Ironfur Grizzly" => 1,
+                         "Kobold Geomancer" => 1,
+                         "Lord of the Arena" => 1,
+                         "Murloc Tidehunter" => 1,
+                         "Ogre Magi" => 1,
+                         "Razorfen Hunter" => 1,
+                         "Shattered Sun Cleric" => 1,
+                         "Silverback Patriarch" => 1,
+                         "Stormpike Commando" => 1,
+                         "Stormwind Champion" => 1,
+                         "Stormwind Knight" => 1,
+                         "War Golem" => 1,
+                         "Blessing of Kings" => 1,
+                         "Consecration" => 1,
+                         "Guardian of Kings" => 1,
+                         "Humility" => 1,
+                         "Truesilver Champion" => 1,
+                         "Divine Spirit" => 1,
+                         "Holy Nova" => 1,
+                         "Mind Control" => 1,
+                         "Mind Vision" => 1,
+                         "Shadow Word: Death" => 1,
+                         "Assassin's Blade" => 1,
+                         "Fan of Knives" => 1,
+                         "Shiv" => 1,
+                         "Sprint" => 1,
+                         "Vanish" => 1,
+                         "Bloodlust" => 1,
+                         "Fire Elemental" => 1,
+                         "Flametongue Totem" => 1,
+                         "Totemic Might" => 1,
+                         "Windspeaker" => 1,
+                         "Corruption" => 1,
+                         "Dread Infernal" => 1,
+                         "Mortal Coil" => 1,
+                         "Sacrificial Pact" => 1,
+                         "Soulfire" => 1,
+                         "Arcanite Reaper" => 1,
+                         "Cleave" => 1,
+                         "Kor'kron Elite" => 1,
+                         "Shield Block" => 1,
+                         "Whirlwind" => 1
+                       };
+
+my $fetch = 0;
+my $de = 0;
+my $db_file = "Hearthstone-Cards.txt";
+my $json_file = "AllSets.json";
+my $deck_dir = "Decks";
+my $class = undef;
+my $by_class = 0;
+my $by_decks = 0;
+my $buy = 0;
+my $rebuild = 0;
+
+GetOptions (
+  "help" => sub { pod2usage(-exitval => 1, -output => \*STDOUT, -verbose => 1); },
+  "man" => sub { pod2usage(-exitval => 2, -output => \*STDOUT, -verbose => 2); },
+  "fetch" => \$fetch,
+  "deck_dir=s" => \$deck_dir,
+  "db=s" => \$db_file,
+  "de" => \$de,
+  "class=s" => \$class,
+  "by_class" => \$by_class,
+  "by_decks" => \$by_decks,
+  "to_buy" => \$buy,
+  "rebuild" => \$rebuild,
+) or pod2usage (2);
+
+my $deck = shift;
+
+if ($fetch or ! -f $json_file) {
+  fetch_json ($json_file);
+}
+if (! -f $db_file) {
+  my $card_db = init_db ($json_file, $db_file);
+  write_db ($db_file, $card_db);
+} elsif (-f $db_file and $rebuild) {
+  my $card_db = init_db ($json_file, $db_file);
+  write_db ($db_file, $card_db);
+}
+
+my $curves = { 'cost'   => [ 0, 0, 0, 0, 0, 0, 0, 0 ],
+               'health' => [ 0, 0, 0, 0, 0, 0, 0, 0 ],
+               'attack' => [ 0, 0, 0, 0, 0, 0, 0, 0 ]
+             };
+
+my $max_curve = 0;
+
+#my $cards = { 'by_name' => {}, 'by_class' => {} };
+
+# cards is
+# {
+#   'order' => [ 'name', 'name', etc ],
+#   'by_name' => { 'name' => { 'attack' => '',
+#                              'class' => '',
+#                              'golden' => '',
+#                              'cost' => '',
+#                              'health' => '',
+#                              'set' => '',
+#                              'mechanics' => [],
+#                              'number' => '',
+#                              'type' => 'Spell' | 'Minion' | 'Weapon',
+#                              'rarity' => ''
+#                             },
+#                }
+#  }
+my $cards = load_cards ($db_file, $json_file);
+my ($type_counts, $all_mechs) = calculate_stuff ($cards);
+
+if ($buy) {
+  to_buy ($type_counts);
+  exit 0;
+}
+
+if ($de) {
+  print_de ($cards);
+  exit 0;
+}
+
+if (defined ($deck)) {
+  print_deck ($cards, $deck);
+} elsif ($by_decks) {
+  opendir (my $DECKS, $deck_dir) or die "can't opendir deck dir $deck_dir : $!";
+  while (my $file = readdir $DECKS) {
+    next if $file =~ /^\./;
+    my ($need, $cost, $class, $cards_needed) = read_deck ($cards, "$deck_dir/$file");
+    print "$file\t$class\t$need\t$cost\n";
+    foreach my $name (keys $cards_needed) {
+      print "$file\t$name\t".$cards_needed->{$name}{needed}."\t".$cards_needed->{$name}{cost}."\n";
+    }
+  }
+  closedir $DECKS;
+} else {
+  print_stats ($type_counts, $by_class ? 'by_class' : 'by_set');
+}
+
+exit 0;
+
+sub add_to_curve {
+  my ($val, $curve) = @_;
+  return if $val eq "";
+  if ($val >= 7) {
+    $val = 7;
+  }
+  $curves->{$curve}[$val]++;
+  $max_curve =
+    $curves->{$curve}[$val] > $max_curve ? $curves->{$curve}[$val] : $max_curve;
+}
+
+sub print_de {
+  my ($cards) = @_;
+  my $total_de = 0;
+
+  printf "%5s\t%-7s\t%-30s\n", "Cost", "Class", "Card";
+  printf "%5s\t%7s\t%30s\n", "-"x5, "-"x7, "-"x30;
+  foreach my $n (@{$cards->{order}}) {
+    my $e = $cards->{by_name}{$n};
+    my $rarity = $e->{rarity};
+    my $number = $e->{number};
+    my $golden = $e->{golden};
+    my $class = $e->{class};
+    if ($rarity ne 'Free' and $number >= 2 and $golden > 0) {
+      my $de_value = $golden_de_costs->{$rarity} * $golden;
+      $total_de += $de_value;
+      printf "%5d\t%7s\t%s\n", $de_value, $class, $n;
+    }
+  }
+  printf "%5s\t%7s\t%30s\n", "-"x5, "-"x7, "-"x30;
+  printf "%5d\t%7s\t%s\n",$total_de,"","Total";
+}
+
+sub deck_from_file {
+  my ($deck_file) = @_;
+  my $total_cards = 0;
+  my $deck = {};
+
+  open DECK, "< $deck_file" or die "can't open $!\n";
+  while (my $line = <DECK>) {
+    next if $line =~ m/^#/;
+    # deal with dos
+    $line =~ s/([^\r\n]+)(\r|\n)$/$1/;
+    chomp $line;
+    # cockatrice format with or without x
+    # 2 <card name>
+    # or
+    # 2x <card name>
+    if ($line =~ m/^\d+(x?)\s/) {
+      my ($need_num, @name) = split /\s/, $line;
+      my $name = join (" ", @name);
+      $deck->{$name} = $need_num;
+      $total_cards += $need_num;
+    } else {
+      # just card name per line
+      $deck->{$line}++;
+      $total_cards++;
+    }
+  }
+  close DECK;
+  die "not enough cards in deck $deck_file\n" if $total_cards != 30;
+  $deck->{filename} = $deck_file;
+  return $deck;
+}
+
+sub read_deck {
+  my ($cards, $deck_file) = @_;
+  my $total_cost = 0;
+  my $total_cards = 0;
+  my $total_needed = 0;
+  my $detected_class = 'Neutral';
+  my $cards_needed = {};
+
+  my $deck = deck_from_file ($deck_file);
+  my $deck_name = $deck->{filename};
+  foreach my $name (keys %{$deck}) {
+    next if $name eq 'filename';
+    $name =~ s/’/'/g;
+    my $need_num = $deck->{$name};
+    $total_cards += $need_num;
+    print STDERR "name [$name] is not in card list!\n" unless exists $cards->{'by_name'}{$name};
+    my $have_number =
+      ($cards->{'by_name'}{$name}{'number'}
+        + $cards->{'by_name'}{$name}{'golden'});
+    my $rarity = $cards->{'by_name'}{$name}{rarity};
+    my $cost;
+    my $need;
+    if ( $have_number >= $need_num) {
+      $need = 0;
+      $cost = 0;
+    } else {
+      unless (defined $cards_needed->{$name}) {
+        $cards_needed->{$name} = { 'needed' => 0, 'cost' => 0 };
+      }
+      $need = ($need_num - $have_number);
+      $cost = $need * $costs->{$rarity};
+      $cards_needed->{$name}{needed} = ($need_num - $have_number);
+      $cards_needed->{$name}{cost} = $need * $costs->{$rarity};
+    }
+    $detected_class = $cards->{'by_name'}{$name}{class} ne 'Neutral' ? $cards->{'by_name'}{$name}{class} : $detected_class;
+    $total_needed += $need;
+    $total_cost += $cost;
+  }
+
+  return ($total_needed, $total_cost, $detected_class, $cards_needed)
+}
+
+sub to_buy {
+  my ($type_counts) = shift;
+  #
+  # Standard Pack Value    | Classic                | Goblins vs Gnomes
+  # 123456789
+  # Legendary
+  # Epic
+  # Rare
+  # Common
+  my @collectable_sets = ('Classic', 'Goblins vs Gnomes', 'The Grand Tournament');
+  printf "%9s ","";
+  foreach my $cs (@collectable_sets) {
+    printf " %-21s", $cs;
+  }
+  print "\n";
+
+  printf "%9s ","";
+  foreach my $cs (@collectable_sets) {
+    printf "%4s %16s ","#","Missing Cards";
+  }
+  print "\n";
+  my %chances;
+  foreach my $type ('Common','Rare','Epic','Legendary') {
+    if ($type eq 'Rare') {
+      print color 'bold blue';
+    } elsif ($type eq 'Epic') {
+      print color 'bold magenta';
+    } elsif ($type eq 'Legendary') {
+      print color 'bold yellow';
+    }
+    printf "%-9s ", $type;
+    print color 'reset';
+    foreach my $set (@collectable_sets) {
+      my $num = $type_counts->{by_set}{$set}{$type}{total_playable};
+      my $have = $type_counts->{by_set}{$set}{$type}{total_have};
+      my $missing = $num - $have;
+      my $chance = $occurrence_probability->{$type} *
+        ((($num-$missing)/$num)*$de_costs->{$type}+$missing/$num*$costs->{$type}) / 100;
+      $chances{$set} += $chance;
+      printf "%5d %5d %9.2f ",$num, $missing, $chance;
+    }
+    print "\n";
+  }
+  printf "%9s ","";
+  my $to_buy = 0;
+  my $buy_set;
+  foreach my $set (@collectable_sets) {
+    if ($chances{$set} > $to_buy) {
+      $to_buy = $chances{$set};
+      $buy_set = $set ;
+    }
+    print color 'bold';
+    printf "%5s %5s %9.2f ","","", $chances{$set} * 5;
+    print color 'reset';
+  }
+  print "\n";
+  print "Buy -> ";
+  print color 'bold red';
+  print $buy_set;
+  print color 'reset';
+  print "\n";
+}
+
+sub print_deck {
+  my ($cards, $deck_file) = @_;
+  my $total_cost = 0;
+  my $total_cards = 0;
+  my $total_needed = 0;
+
+  my $deck = deck_from_file ($deck_file);
+  my $deck_name = $deck->{filename};
+
+  print "--------------------------------------------------\n";
+  print "$deck_name\n";
+  print "--------------------------------------------------\n";
+
+  foreach my $n (@{$cards->{order}}) {
+    next if not exists $deck->{$n};
+    my $name = $n;
+#  foreach my $name (keys %{$deck}) {
+    next if $name eq 'filename';
+    my $need_num = $deck->{$name};
+    $total_cards += $need_num;
+    print STDERR "name [$name] is not in card list!\n" unless exists $cards->{'by_name'}{$name};
+    my $have_number =
+      ($cards->{'by_name'}{$name}{'number'}
+        + $cards->{'by_name'}{$name}{'golden'});
+
+    my $manacost = $cards->{'by_name'}{$name}{cost};
+    my $attack = $cards->{'by_name'}{$name}{attack};
+    my $health = $cards->{'by_name'}{$name}{health};
+    my $type = $cards->{'by_name'}{$name}{type};
+    foreach my $m (@{$cards->{'by_name'}{$name}{mechanics}}) {
+      $all_mechs->{$m} += $need_num;
+    }
+    if ($need_num == 1) {
+      add_to_curve ($cards->{'by_name'}{$name}{cost}, 'cost');
+      add_to_curve ($cards->{'by_name'}{$name}{attack}, 'attack') if ($type ne "Weapon");
+      add_to_curve ($cards->{'by_name'}{$name}{health}, 'health');
+    } elsif ($need_num == 2) {
+      add_to_curve ($cards->{'by_name'}{$name}{cost}, 'cost');
+      add_to_curve ($cards->{'by_name'}{$name}{attack}, 'attack') if ($type ne "Weapon");
+      add_to_curve ($cards->{'by_name'}{$name}{health}, 'health');
+      add_to_curve ($cards->{'by_name'}{$name}{cost}, 'cost');
+      add_to_curve ($cards->{'by_name'}{$name}{attack}, 'attack') if ($type ne "Weapon");
+      add_to_curve ($cards->{'by_name'}{$name}{health}, 'health');
+    }
+    my $rarity = $cards->{'by_name'}{$name}{rarity};
+    my $cost;
+    my $need;
+    if ( $have_number >= $need_num) {
+      $need = 0;
+      $cost = 0;
+    } else {
+      $need = ($need_num - $have_number);
+      $cost = $need * $costs->{$rarity};
+    }
+
+    $total_needed += $need;
+    $total_cost += $cost;
+    printf "%4d ", $cost;
+    printf "%-9s ", $rarity;
+    printf "%2s ", $need;
+    printf "%2s ", $need_num;
+    print color 'bold blue';
+    printf "%2s ", $manacost;
+    print color 'bold yellow';
+    printf "%2s ", $attack;
+    print color 'bold red';
+    printf "%2s ", $health;
+    print color 'reset';
+    printf "%s\n", $name;
+  }
+  close DECK;
+  print "--------------------------------------------------\n";
+  print "Total Cards:  $total_cards\n";
+  print "Cards Needed: $total_needed\n";
+  print "My Cost:      $total_cost\n";
+
+  #
+  #
+  #
+  #          1         2         3         4         5         6         7
+  #01234567890123456789012345678901234567890123456789012345678901234567890123456789
+  #     0 1 2 3 4 5 6 7     0 1 2 3 4 5 6 7     0 1 2 3 4 5 6 7
+  #          Cost               Attack              Health
+  #
+  print "\n";
+  for ( my $i = $max_curve + 1 ; $i >= 0 ; $i-- ) {
+    printf "%2d   ", $i; #" "x5;
+    foreach my $curve ('cost', 'attack', 'health') {
+      if ($curve eq 'cost') {
+        print color 'bold blue';
+      } elsif ($curve eq 'attack') {
+        print color 'bold yellow';
+      } elsif ($curve eq 'health') {
+        print color 'bold red';
+      }
+      for (my $j = 0; $j < 8; $j++ ) {
+        if ($i eq 0) {
+          print color 'reset';
+          print "$j ";
+        } elsif ($curves->{$curve}[$j] >= $i) {
+          print "# ";
+        } else {
+          print "  ";
+        }
+      }
+      print " "x5;
+    }
+    print color 'reset';
+    print "\n";
+  }
+  print "         Cost                  Attack               Health\n";
+  print "-"x72,"\n\n";
+
+  my @all = sort keys %{$all_mechs};
+  my $len = scalar @all;
+  for (my $i = 0; $i < scalar @all; $i += 3 ) {
+    for (my $j = 0 ; $j <= 2 ; $j++ ) {
+      if ( ($i+$j) < $len ) {
+        printf "%-20s ", $all[$i+$j];
+        print color 'bright_white';
+        printf "%2d  ", , $all_mechs->{$all[$i+$j]};
+        print color 'reset';
+      }
+    }
+    print "\n";
+  }
+}
+
+sub print_stats {
+  my ($type_counts, $label) = @_;
+
+  my $total_missing = 0;
+  my $total_for_complete = 0;
+  my $total_cost = 0;
+
+  my $label_fmt = (sprintf "%%%ds", $labels_max{$label});
+
+  printf $label_fmt." : %10s : %3s/%3s/%3s/%3s : %6s : %5s : %6s : %6s\n",
+         $label,"Rarity", "0", "1", "2", "Total", "Have%", "Need#", "Need%", "Cost";
+  printf $label_fmt." : %10s : %15s : %6s : %5s : %6s : %6s\n",
+         "-"x$labels_max{$label},"-"x10,"-"x17,"-"x6,"-"x5,"-"x6,"-"x6;
+  foreach my $l (@{$labels{$label}}) {
+    my $total_missing_by_label = 0;
+    my $total_for_complete_by_label = 0;
+    my $total_cost_by_label = 0;
+    foreach my $type (@types) {
+      my $still_need;
+      my $total;
+      if ($type eq 'Legendary') {
+        $still_need = $type_counts->{$label}{$l}{$type}{'have'}[0];
+        $total = $type_counts->{$label}{$l}{$type}{'total'};
+      } else {
+        $still_need =
+          $type_counts->{$label}{$l}{$type}{'have'}[0]*2
+          + $type_counts->{$label}{$l}{$type}{'have'}[1];
+        $total = $type_counts->{$label}{$l}{$type}{'total'}*2;
+      }
+      $total_missing_by_label += $still_need;
+      $total_for_complete_by_label += $total;
+      my $cost = $still_need > 0 ? $still_need * $costs->{$type} : 0;
+      $total_cost_by_label += $cost;
+      my $need_percent = $still_need > 0 ? $still_need/$total * 100 : 0.0;
+      my $have_percent = 100-$need_percent;
+      if ($total > 0) {
+        printf $label_fmt." : %10s : %3d/%3d/%3d/%5d : %6.2f : %5d : %6.2f : %6d\n",
+          $l,
+          $type,
+          $type_counts->{$label}{$l}{$type}{'have'}[0],
+          $type_counts->{$label}{$l}{$type}{'have'}[1],
+          $type_counts->{$label}{$l}{$type}{'have'}[2],
+          $type_counts->{$label}{$l}{$type}{'total'},
+          $have_percent,
+          $still_need,
+          $need_percent,
+          $cost;
+      }
+    }
+
+    $total_missing += $total_missing_by_label;
+    $total_for_complete += $total_for_complete_by_label;
+    $total_cost += $total_cost_by_label;
+
+    my $total_need_percent_by_label = $total_missing_by_label > 0
+                             ? $total_missing_by_label/$total_for_complete_by_label * 100
+                             : 0.0;
+
+    printf $label_fmt." : %10s : %15s : %6s : %5s : %6s : %6s\n",
+           "-"x$labels_max{$label},"-"x10,"-"x17,"-"x6,"-"x5,"-"x6,"-"x6;
+    printf $label_fmt." : %10s : %4s%4s%4s%5d : %6.2f : %5d : %6.2f : %6d\n",
+      $l,
+      " ",
+      " ",
+      " ",
+      " ",
+      $total_for_complete_by_label,
+      100-$total_need_percent_by_label,
+      $total_missing_by_label,
+      $total_need_percent_by_label,
+      $total_cost_by_label;
+
+    printf $label_fmt." : %10s : %15s : %6s : %5s : %6s : %6s\n",
+           "-"x$labels_max{$label},"-"x10,"-"x17,"-"x6,"-"x5,"-"x6,"-"x6;
+  }
+  my $total_need_percent = $total_missing > 0
+                           ? $total_missing/$total_for_complete * 100
+                           : 0.0;
+  printf $label_fmt." : %10s : %17s : %6.2f : %5d : %6.2f : %6d\n",
+      "Total",
+      " ",
+      $total_for_complete,
+      100-$total_need_percent,
+      $total_missing,
+      $total_need_percent,
+      $total_cost;
+}
+
+sub init_db {
+  my ($json_file, $db_file) = @_;
+
+  my $card_db = {
+                  'order' => [],
+                  'by_name' => {}
+                };
+
+  # if we have a db file load it
+  if (-f $db_file ) {
+    open CARDS, "< $db_file" or die "can't open $!\n";
+    my $header = <CARDS>;
+    while (my $line = <CARDS>) {
+      chomp $line;
+      my ($class, $set, $type, $number, $golden, $name) = split /\t/, $line;
+      $card_db->{'by_name'}{$name} = { 'class'  => $class,
+                                       'set'    => $set,
+                                       'rarity' => $type,
+                                       'number' => $number,
+                                       'golden' => $golden
+                                     };
+    }
+    close CARDS;
+  }
+
+  # next load and merge in the json
+  local $/;
+  open ( my $fh, '<', $json_file );
+  my $json_text = <$fh>;
+  close ($fh);
+  my $ref = decode_json ($json_text);
+  my $db_raw = {};
+  foreach my $set (keys %{$ref}) {
+    foreach my $card (@{$ref->{$set}}) {
+      if ($set eq "Curse of Naxxramas") {
+        $set = "Naxxramas";
+      } elsif ($set eq "Expert") {
+        $set = "Classic";
+      } elsif ($set eq "Tavern Brawl") {
+        next;
+      }
+      # AllSets.json lists several Free cards as Common because internally
+      # the are represented as such but I want them to be Free so that
+      # cost are computed accurately, so if they are in the list, make them
+      # Free
+      if (defined $free_not_common->{$card->{name}}) {
+        $card->{rarity} = "Free";
+      }
+
+      my $type = $card->{type};
+      next if $type eq "Hero";  # skip hero cards
+      next if $type eq "Enchantment"; # skip enchantment cards
+      if (defined $card->{collectible}) {
+        my $class =
+          defined $card->{playerClass} ? $card->{playerClass} : "Neutral";
+        my $name = $card->{name};
+        my $entry =
+          { 'class' => $class,
+            'set' => $set,
+            'rarity' => $card->{rarity},
+            'cost' => $card->{cost},
+            'type' => $type,
+            'name' => $name,
+            'number' => 0,
+            'golden' => 0,
+            'health' => defined $card->{health} ? $card->{health} : "",
+            'mechanics' => $card->{mechanics},
+            'attack' => defined $card->{attack} ? $card->{attack} : ""
+          };
+        if (exists $card_db->{by_name}{$name}) {
+          $entry->{number} = $card_db->{by_name}{$name}{number};
+          $entry->{golden} = $card_db->{by_name}{$name}{golden};
+        }
+        $db_raw->{$class}{$card->{cost}}{$type}{$name} = $entry;
+        $card_db->{by_name}{$name} = $entry;
+      }
+    }
+  }
+  # order based on how the cards are sorted in the collection tab in
+  # hearthstone for easier management
+  # 1. by class
+  # 2. by mana cost
+  # 3. by card type (Weapon, Spell, Minion)
+  # 4. alphabetically by name
+  foreach my $class (@classes) {
+    foreach my $mana (sort {$a <=> $b} keys %{$db_raw->{$class}}) {
+      foreach my $ct (@card_type) {
+        if (exists $db_raw->{$class}{$mana}{$ct}) {
+          foreach my $n (sort {lc($a) cmp lc($b) } keys %{$db_raw->{$class}{$mana}{$ct}}) {
+            push @{$card_db->{order}}, $n;
+          }
+        }
+      }
+    }
+  }
+  $db_raw = undef;
+  return $card_db;
+}
+
+sub write_db {
+  my ($db_name, $card_db) = @_;
+  print STDERR "opening $db_name\n";
+  open ( my $db, '>', $db_name) or die "Can't open $db_name : $!\n";
+  print $db "Class\tSet\tRarity\tNumber\tGold\tName\n";
+  foreach my $n (@{$card_db->{order}}) {
+    my $e = $card_db->{by_name}{$n};
+    print $db
+      join ("\t", ($e->{class}, $e->{set}, $e->{rarity},
+                   $e->{number}, $e->{golden}, $e->{name}))."\n";
+  }
+  close $db;
+}
+
+sub calculate_stuff {
+  my ($cards) = shift;
+  my $type_counts = {'by_set' => {}, 'by_class' => {}};
+  my $all_mechs = {};
+  foreach my $s (@sets) {
+    unless (exists ($type_counts->{'by_set'}{$s})) {
+      $type_counts->{'by_set'}{$s} = {};
+    }
+    foreach my $t (@types) {
+      $type_counts->{'by_set'}{$s}{$t} = { 'total' => 0,
+                                           'total_playable' => 0,
+                                           'total_have' => 0,
+                                           'have' => [ 0, 0, 0 ]
+                                         };
+    }
+  }
+  foreach my $c (@classes) {
+    unless (exists ($type_counts->{'by_class'}{$c})) {
+      $type_counts->{'by_class'}{$c} = {};
+    }
+    foreach my $t (@types) {
+      $type_counts->{'by_class'}{$c}{$t} = { 'total' => 0,
+                                             'total_playable' => 0,
+                                             'total_have' => 0,
+                                             'have' => [ 0, 0, 0 ]
+                                           };
+    }
+  }
+
+  foreach my $name (keys %{$cards->{'by_name'}}) {
+    my $mechanics = $cards->{'by_name'}{$name}{mechanics};
+    my $class     = $cards->{'by_name'}{$name}{class};
+    my $set       = $cards->{'by_name'}{$name}{set};
+    my $rarity    = $cards->{'by_name'}{$name}{rarity};
+    my $number    = $cards->{'by_name'}{$name}{number};
+    my $golden    = $cards->{'by_name'}{$name}{golden};
+    my $health    = $cards->{'by_name'}{$name}{health};
+    my $attack    = $cards->{'by_name'}{$name}{attack};
+    my $cost      = $cards->{'by_name'}{$name}{cost};
+    my $type      = $cards->{'by_name'}{$name}{type};
+
+    # determine all possible mechanics
+    if (defined ($mechanics) ) {
+      foreach my $mech (sort @{$mechanics}) {
+        $all_mechs->{$mech} = 0;
+      }
+    }
+    # determine card counts
+    my $ct = $number + $golden;
+
+    $type_counts->{'by_set'}{$set}{$rarity}{'total'} += 1;
+    $type_counts->{'by_class'}{$class}{$rarity}{'total'} += 1;
+    $type_counts->{'by_set'}{$set}{$rarity}{'total_have'} += $ct > 2 ? 2 : $ct;
+    $type_counts->{'by_class'}{$class}{$rarity}{'total_have'} += $ct > 2 ? 2 : $ct;
+
+    if ($rarity eq "Legendary") {
+      $type_counts->{'by_set'}{$set}{$rarity}{'total_playable'} += 1;
+      $type_counts->{'by_class'}{$class}{$rarity}{'total_playable'} += 1;
+      if ($ct > 0) {
+        $type_counts->{'by_set'}{$set}{Legendary}{'have'}[1]++;
+        $type_counts->{'by_class'}{$class}{Legendary}{'have'}[1]++;
+      } else {
+        $type_counts->{'by_set'}{$set}{Legendary}{'have'}[0]++;
+        $type_counts->{'by_class'}{$class}{Legendary}{'have'}[0]++;
+      }
+    } else {
+      $type_counts->{'by_set'}{$set}{$rarity}{'total_playable'} += 2;
+      $type_counts->{'by_class'}{$class}{$rarity}{'total_playable'} += 2;
+      if ($ct >= 2 ) {
+        $type_counts->{'by_set'}{$set}{$rarity}{'have'}[2]++;
+        $type_counts->{'by_class'}{$class}{$rarity}{'have'}[2]++;
+      } elsif ( $ct == 1) {
+        $type_counts->{'by_set'}{$set}{$rarity}{'have'}[1]++;
+        $type_counts->{'by_class'}{$class}{$rarity}{'have'}[1]++;
+      } else {
+        $type_counts->{'by_set'}{$set}{$rarity}{'have'}[0]++;
+        $type_counts->{'by_class'}{$class}{$rarity}{'have'}[0]++;
+      }
+    }
+  }
+  return ($type_counts, $all_mechs);
+}
+
+sub fetch_json {
+  my ($json_file) = @_;
+  # fetch all the card data from hearthstonejson.com
+  my $url = "http://hearthstonejson.com/json/AllSets.json";
+  use File::Fetch;
+  my $ff = File::Fetch->new(uri => $url);
+  my $file = $ff->fetch() or die $ff->error;
+}
+
+sub load_cards {
+  my ($db_file, $json_file) = @_;
+  my $cards = { 'by_name' => {}, 'order' => [] };
+
+  # if we have a db file load it
+  if (-f $db_file ) {
+    open CARDS, "< $db_file" or die "can't open $!\n";
+    my $header = <CARDS>;
+    while (my $line = <CARDS>) {
+      chomp $line;
+      my ($class, $set, $type, $number, $golden, $name) = split /\t/, $line;
+      $cards->{'by_name'}{$name} = { 'class'  => $class,
+                                     'set'    => $set,
+                                     'rarity' => $type,
+                                     'number' => $number,
+                                     'golden' => $golden
+                                   };
+      push @{$cards->{order}}, $name;
+    }
+    close CARDS;
+  }
+
+  # next load the json data and merge it
+  my $all_sets = {};
+  local $/;
+  open ( my $fh, '<', $json_file );
+  my $json_text = <$fh>;
+  close ($fh);
+  my $ref = decode_json ($json_text);
+  foreach my $type (keys %{$ref}) {
+    foreach my $card (@{$ref->{$type}}) {
+      next unless exists ($card->{rarity});
+      next unless exists ($card->{artist}); # if there are multiples by the same
+                                            # name use artist to disambiguate
+
+      my $name = $card->{name};
+      if (defined ($cards->{'by_name'}{$name})) {
+        $cards->{'by_name'}{$name}{type} = $card->{type};
+        $cards->{'by_name'}{$name}{health} =
+          defined $card->{health} ? $card->{health} : "";
+        $cards->{'by_name'}{$name}{attack} =
+          defined $card->{attack} ? $card->{attack} : "";
+        $cards->{'by_name'}{$name}{cost}   = $card->{cost};
+        $cards->{'by_name'}{$name}{mechanics} = $card->{mechanics};
+      }
+    }
+  }
+  return $cards;
+}
+
+__END__
+
+=head1 NAME
+
+hs-collection-tool [options] [deck] - tool to manage a hearthstone card collection
+
+=head1 SYNOPSIS
+
+hs-collection-tool [options] [deck]
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<db>
+
+Alternate db file
+
+=item B<--help>
+
+Short help
+
+=item B<--man>
+
+Longer help
+
+=back
+
+=head1 DESCRIPTION
+
+This tool is used to compute the current amount of cards one owns as well
+as calculate the cost of decks.  The first time it is invoked it will download
+a database of cards from hearthstonejson.com and create a database file called
+Hearthstone-Cards.txt.  The database can be changed using the B<db> query arg.
+
+
+=head1 AUTHOR
+
+Anthony Molinaro <anthonym@alumni.caltech.edu>
+
+=cut
