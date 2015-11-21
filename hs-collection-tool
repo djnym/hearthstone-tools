@@ -14,6 +14,7 @@ my @sets = ('Basic',
             'Goblins vs Gnomes',
             'Blackrock Mountain',
             'The Grand Tournament',
+            'League of Explorers',
             'Promotion',
             'Reward');
 my @types = ('Free',
@@ -253,7 +254,7 @@ if (defined ($deck)) {
     my ($need, $cost, $class, $cards_needed) = read_deck ($cards, "$deck_dir/$file");
     print "$file\t$class\t$need\t$cost\n";
     foreach my $name (keys $cards_needed) {
-      print "$file\t$name\t".$cards_needed->{$name}{needed}."\t".$cards_needed->{$name}{cost}."\n";
+      print "Card\t".$cards->{by_name}{$name}{set}."\t$name\t".$cards_needed->{$name}{needed}."\t".$cards_needed->{$name}{cost}."\n";
     }
   }
   closedir $DECKS;
@@ -446,11 +447,8 @@ sub print_deck {
   print "$deck_name\n";
   print "--------------------------------------------------\n";
 
-  foreach my $n (@{$cards->{order}}) {
-    next if not exists $deck->{$n};
-    my $name = $n;
-#  foreach my $name (keys %{$deck}) {
-    next if $name eq 'filename';
+  foreach my $name (@{$cards->{order}}) {
+    next if not exists $deck->{$name};
     my $need_num = $deck->{$name};
     $total_cards += $need_num;
     print STDERR "name [$name] is not in card list!\n" unless exists $cards->{'by_name'}{$name};
@@ -848,10 +846,11 @@ sub calculate_stuff {
 sub fetch_json {
   my ($json_file) = @_;
   # fetch all the card data from hearthstonejson.com
-  my $url = "http://hearthstonejson.com/json/AllSets.json";
-  use File::Fetch;
-  my $ff = File::Fetch->new(uri => $url);
-  my $file = $ff->fetch() or die $ff->error;
+  my $url = "https://hearthstonejson.com/json/AllSets.json";
+#  use File::Fetch;
+#  my $ff = File::Fetch->new(uri => $url);
+#  my $file = $ff->fetch() or die $ff->error(1);
+  `curl $url > $json_file`;
 }
 
 sub load_cards {
