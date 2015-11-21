@@ -1,0 +1,116 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Data::Dumper;
+use JSON::PP;
+use Getopt::Long;
+use Pod::Usage;
+
+my $latest_json = "latest";
+my $json_cache = "json-cache";
+my $url = "https://tempostorm.com/snapshot/latest";
+
+GetOptions (
+  "help" => sub { pod2usage(-exitval => 1, -output => \*STDOUT, -verbose => 1); },
+  "man" => sub { pod2usage(-exitval => 2, -output => \*STDOUT, -verbose => 2); },
+  "url=s" => \$url,
+) or pod2usage (2);
+
+
+sub fetch_latest {
+  my ($latest) = @_;
+  if ($latest ne "latest" and ! -f "$json_cache/$latest") {
+    `curl 'https://tempostorm.com/snapshot/' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' -H 'Referer: https://tempostorm.com/hearthstone' --data-binary '{"slug":"$latest"}' --compressed > $json_cache/$latest`;
+  } elsif ($latest eq "latest" and ! -f "$json_cache/$latest") {
+    `curl 'https://tempostorm.com/snapshot/latest' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' -H 'Referer: https://tempostorm.com/hearthstone' --data-binary '{}' --compressed > $json_cache/$latest`;
+  } else {
+    print STDERR "already fetched $latest\n";
+  }
+  return load_latest ("$json_cache/$latest");
+}
+
+sub load_latest {
+  my $latest = shift;
+  local $/;
+  open ( my $fh, '<', $latest);
+  my $json_text = <$fh>;
+  close ($fh);
+  my $ref = decode_json ($json_text);
+  return $ref;
+}
+
+sub fetch_deck {
+  my $deck = shift;
+  if (! -f "$json_cache/$deck") {
+    `curl 'https://tempostorm.com/deck' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' --data-binary '{"slug":"$deck"}' --compressed > $json_cache/$deck`;
+  } else {
+    print STDERR "already fetched $deck\n";
+  }
+  return load_deck ("$json_cache/$deck");
+}
+
+sub load_deck {
+  my $deck = shift;
+  local $/;
+  open ( my $fh, '<', $deck);
+  my $json_text = <$fh>;
+  close ($fh);
+  my $ref = decode_json ($json_text);
+  return $ref;
+}
+
+sub find_decks {
+  my $ref = shift;
+  my $ref_snapshot;
+  if (ref($ref->{snapshot}) eq 'ARRAY'){
+    $ref_snapshot = $ref->{snapshot}[0];
+  } else {
+    $ref_snapshot = $ref->{snapshot};
+  }
+  my $snapshot = {};
+  my $snap_num = $ref_snapshot->{snapNum};
+  my $snap_title = $ref_snapshot->{title};
+  $snapshot->{num} = $snap_num;
+  $snapshot->{title} = $snap_title;
+  $snapshot->{decks} = [];
+  my $deck_num = 1;
+  foreach my $tier (@{$ref_snapshot->{tiers}}) {
+    my $tier_num = $tier->{tier};
+    foreach my $deck (@{$tier->{decks}}) {
+      my $name = $deck->{deck}{name};
+      my $slug = $deck->{deck}{slug};
+      push @{$snapshot->{decks}}, { 'deck' => $deck_num,
+                                    'tier' => $tier_num,
+                                    'name' => $name,
+                                    'slug' => $slug };
+      $deck_num++;
+    }
+  }
+  return $snapshot;
+}
+
+if (defined ($url) and $url =~ m/\/([^\/]+)$/) {
+  $latest_json = $1;
+}
+print "latest is $latest_json\n";
+my $snapshot = find_decks (fetch_latest ($latest_json));
+
+my $snapshot_dir = "TempoStorm-".$snapshot->{num};
+mkdir $snapshot_dir;
+foreach my $deck (@{$snapshot->{decks}}) {
+  my $deck_data = fetch_deck ($deck->{slug});
+  my $n = sprintf "%02d", $deck->{deck};
+  open FH, "> $snapshot_dir/".$n."-".$deck->{slug}.".txt";
+  foreach my $card (@{$deck_data->{deck}{cards}}) {
+    if ($card->{card}{name} eq "Ancestors Call") {
+      $card->{card}{name} = "Ancestor's Call";
+    } elsif ($card->{card}{name} eq "Bouncing Blades") {
+      $card->{card}{name} = "Bouncing Blade";
+    }
+    print FH $card->{qty}." ".$card->{card}{name}."\n";
+  }
+  close FH;
+}
+
+0;
