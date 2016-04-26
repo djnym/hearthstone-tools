@@ -20,13 +20,19 @@ GetOptions (
 
 sub fetch_latest {
   my ($latest) = @_;
+
+  my $url = "https://tempostorm.com/api/snapshots/findOne?filter=%7B%22where%22:%7B%22slug.url%22:%22$latest%22%7D,%22fields%22:%7B%22id%22:true,%22authorId%22:true,%22deckId%22:true,%22active%22:true,%22snapNum%22:true,%22votes%22:true,%22voteScore%22:true,%22title%22:true,%22content%22:true,%22slug%22:true,%22photoNames%22:true,%22createdDate%22:true%7D,%22include%22:%5B%7B%22relation%22:%22comments%22,%22scope%22:%7B%22include%22:%5B%7B%22relation%22:%22author%22,%22scope%22:%7B%22fields%22:%7B%22id%22:true,%22username%22:true,%22email%22:true%7D%7D%7D%5D%7D%7D,%7B%22relation%22:%22deckMatchups%22,%22scope%22:%7B%22include%22:%5B%7B%22relation%22:%22forDeck%22,%22scope%22:%7B%22fields%22:%7B%22id%22:true,%22playerClass%22:true%7D%7D%7D,%7B%22relation%22:%22againstDeck%22,%22scope%22:%7B%22fields%22:%7B%22id%22:true,%22playerClass%22:true%7D%7D%7D%5D%7D%7D,%7B%22relation%22:%22deckTiers%22,%22scope%22:%7B%22include%22:%5B%7B%22relation%22:%22deck%22,%22scope%22:%7B%22fields%22:%7B%22id%22:true,%22playerClass%22:true,%22name%22:true,%22slug%22:true%7D%7D%7D,%7B%22relation%22:%22deckTech%22,%22scope%22:%7B%22include%22:%5B%7B%22relation%22:%22cardTech%22,%22scope%22:%7B%22include%22:%5B%7B%22relation%22:%22card%22%7D%5D%7D%7D%5D%7D%7D%5D%7D%7D,%7B%22relation%22:%22authors%22,%22fields%22:%7B%22description%22:true,%22expertClasses%22:true,%22id%22:true,%22userId%22:true%7D,%22scope%22:%7B%22include%22:%5B%7B%22relation%22:%22user%22,%22scope%22:%7B%22fields%22:%7B%22id%22:true,%22social%22:true,%22username%22:true%7D%7D%7D%5D%7D%7D%5D%7D";
+#  ' -H 'Pragma: no-cache' -H 'DNT: 1' -H 'Accept-Encoding: gzip, deflate, sdch' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36' -H 'Accept: application/json, text/plain, */*' -H 'Referer: https://tempostorm.com/hearthstone/meta-snapshot/druids-druids-everywhere' -H 'Cookie: connect.sid=s%3A_ZLo14lVFaHUUjuPKx2BhhC5zsgTE1Nx.Q4f2wt3yBaMUX3FY%2BiySsRzxX4akGHCo5z%2BTcr1MxPs; _gat=1; _ga=GA1.2.356593097.1424924885' -H 'Connection: keep-alive' -H 'Cache-Control: no-cache' --compressed
+#curl 'https://tempostorm.com/api/snapshots/findOne?filter=%7B%22order%22:%22createdDate+DESC%22,%22where%22:%7B%22isActive%22:true%7D%7D' -H 'Pragma: no-cache' -H 'DNT: 1' -H 'Accept-Encoding: gzip, deflate, sdch' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36' -H 'Accept: application/json, text/plain, */*' -H 'Referer: https://tempostorm.com/hearthstone/meta-snapshot' -H 'Cookie: connect.sid=s%3A_ZLo14lVFaHUUjuPKx2BhhC5zsgTE1Nx.Q4f2wt3yBaMUX3FY%2BiySsRzxX4akGHCo5z%2BTcr1MxPs; _gat=1; _ga=GA1.2.356593097.1424924885' -H 'Connection: keep-alive' -H 'Cache-Control: no-cache' --compressed
   if ($latest ne "latest" and ! -f "$json_cache/$latest") {
-    `curl 'https://tempostorm.com/snapshot/' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' -H 'Referer: https://tempostorm.com/hearthstone' --data-binary '{"slug":"$latest"}' --compressed > $json_cache/$latest`;
-  } elsif ($latest eq "latest" and ! -f "$json_cache/$latest") {
-    `curl 'https://tempostorm.com/snapshot/latest' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' -H 'Referer: https://tempostorm.com/hearthstone' --data-binary '{}' --compressed > $json_cache/$latest`;
-  } else {
-    print STDERR "already fetched $latest\n";
+    `curl '$url' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' -H 'Referer: https://tempostorm.com/hearthstone' --compressed > $json_cache/$latest`;
   }
+ 
+#  elsif ($latest eq "latest" and ! -f "$json_cache/$latest") {
+#    `curl 'https://tempostorm.com/snapshot/latest' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' -H 'Referer: https://tempostorm.com/hearthstone' --data-binary '{}' --compressed > $json_cache/$latest`;
+#  } else {
+#    print STDERR "already fetched $latest\n";
+#  }
   return load_latest ("$json_cache/$latest");
 }
 
@@ -42,8 +48,9 @@ sub load_latest {
 
 sub fetch_deck {
   my $deck = shift;
+  my $url = "https://tempostorm.com/api/decks/findOne?filter=%7B%22where%22:%7B%22slug%22:%22$deck%22%7D,%22fields%22:%7B%22id%22:true,%22createdDate%22:true,%22name%22:true,%22description%22:true,%22playerClass%22:true,%22premium%22:true,%22slug%22:true,%22dust%22:true,%22heroName%22:true,%22authorId%22:true,%22deckType%22:true,%22viewCount%22:true,%22isPublic%22:true,%22votes%22:true,%22voteScore%22:true,%22chapters%22:true,%22youtubeId%22:true,%22gameModeType%22:true,%22isActive%22:true%7D,%22include%22:%5B%7B%22relation%22:%22cards%22,%22scope%22:%7B%22include%22:%5B%22card%22%5D%7D%7D,%7B%22relation%22:%22comments%22,%22scope%22:%7B%22include%22:%5B%22author%22%5D%7D%7D,%7B%22relation%22:%22author%22,%22scope%22:%7B%22fields%22:%5B%22id%22,%22email%22,%22username%22,%22social%22,%22subscription%22%5D%7D%7D,%7B%22relation%22:%22matchups%22%7D%5D%7D";
   if (! -f "$json_cache/$deck") {
-    `curl 'https://tempostorm.com/deck' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' --data-binary '{"slug":"$deck"}' --compressed > $json_cache/$deck`;
+    `curl '$url' -H 'Pragma: no-cache' -H 'Origin: https://tempostorm.com' -H 'Accept-Encoding: gzip, deflate' -H 'Accept-Language: en-US,en;q=0.8' -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.101 Safari/537.36' -H 'Content-Type: application/json;charset=UTF-8' -H 'Accept: application/json, text/plain, */*' -H 'Cache-Control: no-cache' --compressed > $json_cache/$deck`;
   } else {
     print STDERR "already fetched $deck\n";
   }
@@ -65,8 +72,8 @@ sub find_decks {
   my $ref_snapshot;
   if (ref($ref->{snapshot}) eq 'ARRAY'){
     $ref_snapshot = $ref->{snapshot}[0];
-  } else {
-    $ref_snapshot = $ref->{snapshot};
+  } elsif (ref($ref) eq 'HASH') {
+    $ref_snapshot = $ref;
   }
   my $snapshot = {};
   my $snap_num = $ref_snapshot->{snapNum};
@@ -75,17 +82,26 @@ sub find_decks {
   $snapshot->{title} = $snap_title;
   $snapshot->{decks} = [];
   my $deck_num = 1;
-  foreach my $tier (@{$ref_snapshot->{tiers}}) {
+  foreach my $tier (@{$ref_snapshot->{deckTiers}}) {
     my $tier_num = $tier->{tier};
-    foreach my $deck (@{$tier->{decks}}) {
-      my $name = $deck->{deck}{name};
-      my $slug = $deck->{deck}{slug};
-      push @{$snapshot->{decks}}, { 'deck' => $deck_num,
-                                    'tier' => $tier_num,
-                                    'name' => $name,
-                                    'slug' => $slug };
-      $deck_num++;
-    }
+    my $name = $tier->{deck}{name};
+    my $slug = $tier->{deck}{slug};
+    my $rank = @{$tier->{ranks}}[0];
+#    my $deck_num = $tier->{orderNum};
+#    print join("\t",($rank,$tier_num,$name,$slug))."\n";
+    push @{$snapshot->{decks}}, { 'deck' => $rank,
+                                  'tier' => $tier_num,
+                                  'name' => $name,
+                                  'slug' => $slug };
+#    foreach my $deck (@{$tier->{deck}}) {
+#      my $name = $deck->{deck}{name};
+#      my $slug = $deck->{deck}{slug};
+#      push @{$snapshot->{decks}}, { 'deck' => $deck_num,
+#                                    'tier' => $tier_num,
+#                                    'name' => $name,
+#                                    'slug' => $slug };
+#      $deck_num++;
+#    }
   }
   return $snapshot;
 }
@@ -95,6 +111,7 @@ if (defined ($url) and $url =~ m/\/([^\/]+)$/) {
 }
 print "latest is $latest_json\n";
 my $snapshot = find_decks (fetch_latest ($latest_json));
+#print Dumper($snapshot);
 
 my $snapshot_dir = "TempoStorm-".$snapshot->{num};
 mkdir $snapshot_dir;
@@ -102,13 +119,13 @@ foreach my $deck (@{$snapshot->{decks}}) {
   my $deck_data = fetch_deck ($deck->{slug});
   my $n = sprintf "%02d", $deck->{deck};
   open FH, "> $snapshot_dir/".$n."-".$deck->{slug}.".txt";
-  foreach my $card (@{$deck_data->{deck}{cards}}) {
+  foreach my $card (@{$deck_data->{cards}}) {
     if ($card->{card}{name} eq "Ancestors Call") {
       $card->{card}{name} = "Ancestor's Call";
     } elsif ($card->{card}{name} eq "Bouncing Blades") {
       $card->{card}{name} = "Bouncing Blade";
     }
-    print FH $card->{qty}." ".$card->{card}{name}."\n";
+    print FH $card->{cardQuantity}." ".$card->{card}{name}."\n";
   }
   close FH;
 }
