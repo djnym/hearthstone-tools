@@ -263,22 +263,24 @@ sub init_db {
       $entry->{number} = $card_db->{by_name}{$name}{number};
       $entry->{golden} = $card_db->{by_name}{$name}{golden};
     }
-    $db_raw->{$class}{$card->{cost}}{$card->{type}}{$name} = $entry;
+#    $db_raw->{$class}{$card->{cost}}{$card->{type}}{$name} = $entry;
+    $db_raw->{$class}{$card->{cost}}{$name} = $entry;
     $card_db->{by_name}{$name} = $entry;
   }
   # order based on how the cards are sorted in the collection tab in
   # hearthstone for easier management
   # 1. by class
   # 2. by mana cost
-  # 3. by card type (Weapon, Spell, Minion)
-  # 4. alphabetically by name
+  # 3. alphabetically by name (with single quotes removed and lowercased)
   foreach my $class (@classes) {
     foreach my $mana (sort {$a <=> $b} keys %{$db_raw->{$class}}) {
-      foreach my $ct (@card_type) {
-        if (exists $db_raw->{$class}{$mana}{$ct}) {
-          foreach my $n (sort {lc($a) cmp lc($b) } keys %{$db_raw->{$class}{$mana}{$ct}}) {
-            push @{$card_db->{order}}, $n;
-          }
+      if (exists $db_raw->{$class}{$mana}) {
+        # normalize the key by removing single quote's (') and lowercasing,
+        # but keep track of the original name by generating a hash
+        my %t = map { my $t = $_; $_ =~ s/\'//g; lc($_) => $t } keys %{$db_raw->{$class}{$mana}};
+        # now sort in alphabetical order
+        foreach my $n (map { $t{$_} } sort { $a cmp $b } keys %t) {
+          push @{$card_db->{order}}, $n;
         }
       }
     }
@@ -309,6 +311,7 @@ sub enhance {
   my ($cards) = shift;
   my $type_counts = {'by_set' => {}, 'by_class' => {}};
   my $all_mechs = {};
+  my $labels_max = { 'by_set' => 0, 'by_class' => 0, 'by_name' => 0 };
   foreach my $s (keys %sets_s2l) {
     unless (exists ($type_counts->{'by_set'}{$s})) {
       $type_counts->{'by_set'}{$s} = {};
@@ -317,7 +320,8 @@ sub enhance {
       $type_counts->{'by_set'}{$s}{$t} = { 'total' => 0,
                                            'total_playable' => 0,
                                            'total_have' => 0,
-                                           'have' => [ 0, 0, 0 ]
+                                           'have' => [ 0, 0, 0 ],
+                                           'missing' => {}
                                          };
     }
   }
@@ -329,7 +333,8 @@ sub enhance {
       $type_counts->{'by_class'}{$c}{$t} = { 'total' => 0,
                                              'total_playable' => 0,
                                              'total_have' => 0,
-                                             'have' => [ 0, 0, 0 ]
+                                             'have' => [ 0, 0, 0 ],
+                                             'missing' => {}
                                            };
     }
   }
@@ -338,6 +343,7 @@ sub enhance {
     my $mechanics = $cards->{'by_name'}{$name}{mechanics};
     my $class     = $cards->{'by_name'}{$name}{class};
     my $set       = $cards->{'by_name'}{$name}{set};
+    my $setlong   = $sets_s2l{$set};
     my $rarity    = $cards->{'by_name'}{$name}{rarity};
     my $number    = $cards->{'by_name'}{$name}{number};
     my $golden    = $cards->{'by_name'}{$name}{golden};
@@ -353,6 +359,12 @@ sub enhance {
         $all_mechs->{$mech} = 0;
       }
     }
+
+    # keep track of max lengths, for later labeling
+    $labels_max->{by_set} = length $setlong > $labels_max->{by_set} ? length $setlong : $labels_max->{by_set};
+    $labels_max->{by_class} = length $class > $labels_max->{by_class} ? length $class : $labels_max->{by_class};
+    $labels_max->{by_name} = length $name > $labels_max->{by_name} ? length $name : $labels_max->{by_name};
+
     # determine card counts
     my $ct = $number + $golden;
 
@@ -368,7 +380,9 @@ sub enhance {
         $type_counts->{'by_set'}{$set}{LEGENDARY}{'have'}[1]++;
         $type_counts->{'by_class'}{$class}{LEGENDARY}{'have'}[1]++;
       } else {
+        $type_counts->{'by_set'}{$set}{LEGENDARY}{missing}{$name} = 1;
         $type_counts->{'by_set'}{$set}{LEGENDARY}{'have'}[0]++;
+        $type_counts->{'by_class'}{$class}{LEGENDARY}{missing}{$name} = 1;
         $type_counts->{'by_class'}{$class}{LEGENDARY}{'have'}[0]++;
       }
     } else {
@@ -378,16 +392,21 @@ sub enhance {
         $type_counts->{'by_set'}{$set}{$rarity}{'have'}[2]++;
         $type_counts->{'by_class'}{$class}{$rarity}{'have'}[2]++;
       } elsif ( $ct == 1) {
+        $type_counts->{'by_set'}{$set}{$rarity}{missing}{$name} = 1;
         $type_counts->{'by_set'}{$set}{$rarity}{'have'}[1]++;
+        $type_counts->{'by_class'}{$class}{$rarity}{missing}{$name} = 1;
         $type_counts->{'by_class'}{$class}{$rarity}{'have'}[1]++;
       } else {
+        $type_counts->{'by_set'}{$set}{$rarity}{missing}{$name} = 2;
         $type_counts->{'by_set'}{$set}{$rarity}{'have'}[0]++;
+        $type_counts->{'by_class'}{$class}{$rarity}{missing}{$name} = 2;
         $type_counts->{'by_class'}{$class}{$rarity}{'have'}[0]++;
       }
     }
   }
   $cards->{type_counts} = $type_counts;
   $cards->{all_mechs} = $all_mechs;
+  $cards->{label_max} = $labels_max;
   return $cards;
 }
 
@@ -519,7 +538,7 @@ sub add_to_curve {
 }
 
 sub deck_from_file {
-  my ($deck_file) = @_;
+  my ($cards, $deck_file) = @_;
   my $total_cards = 0;
   my $deck = {};
 
@@ -533,16 +552,19 @@ sub deck_from_file {
     # 2 <card name>
     # or
     # 2x <card name>
+    my $name = undef;
     if ($line =~ m/^\d+(x?)\s/) {
       my ($need_num, @name) = split /\s/, $line;
-      my $name = join (" ", @name);
+      $name = join (" ", @name);
       $deck->{$name} = $need_num;
       $total_cards += $need_num;
     } else {
       # just card name per line
-      $deck->{$line}++;
+      $name = $line;
+      $deck->{$name}++;
       $total_cards++;
     }
+    die "name [$name] is not in card list!\n" unless exists $cards->{'by_name'}{$name};
   }
   close DECK;
   die "not enough cards in deck $deck_file\n" if $total_cards != 30;
@@ -558,14 +580,13 @@ sub read_deck {
   my $detected_class = 'NEUTRAL';
   my $cards_needed = {};
 
-  my $deck = deck_from_file ($deck_file);
+  my $deck = deck_from_file ($cards, $deck_file);
   my $deck_name = $deck->{filename};
   foreach my $name (keys %{$deck}) {
     next if $name eq 'filename';
     $name =~ s/’/'/g;
     my $need_num = $deck->{$name};
     $total_cards += $need_num;
-    print STDERR "name [$name] is not in card list!\n" unless exists $cards->{'by_name'}{$name};
     my $have_number =
       ($cards->{'by_name'}{$name}{'number'}
         + $cards->{'by_name'}{$name}{'golden'});
@@ -584,7 +605,10 @@ sub read_deck {
       $cards_needed->{$name}{needed} = ($need_num - $have_number);
       $cards_needed->{$name}{cost} = $need * $costs->{$rarity};
     }
-    $detected_class = $cards->{'by_name'}{$name}{class} ne 'NEUTRAL' ? $cards->{'by_name'}{$name}{class} : $detected_class;
+    $detected_class =
+      $cards->{'by_name'}{$name}{class} ne 'NEUTRAL'
+      ? $cards->{'by_name'}{$name}{class}
+      : $detected_class;
     $total_needed += $need;
     $total_cost += $cost;
   }
@@ -598,7 +622,7 @@ sub print_deck {
   my $total_cards = 0;
   my $total_needed = 0;
 
-  my $deck = deck_from_file ($deck_file);
+  my $deck = deck_from_file ($cards, $deck_file);
   my $deck_name = $deck->{filename};
 
   print "--------------------------------------------------\n";
@@ -609,7 +633,6 @@ sub print_deck {
     next if not exists $deck->{$name};
     my $need_num = $deck->{$name};
     $total_cards += $need_num;
-    print STDERR "name [$name] is not in card list!\n" unless exists $cards->{'by_name'}{$name};
     my $have_number =
       ($cards->{'by_name'}{$name}{'number'}
         + $cards->{'by_name'}{$name}{'golden'});
@@ -717,8 +740,26 @@ sub print_deck {
   }
 }
 
+sub print_decks {
+  my ($cards, $deck_dir) = @_;
+  opendir (my $DECKS, $deck_dir) or die "can't opendir deck dir $deck_dir : $!";
+  while (my $file = readdir $DECKS) {
+    next if $file =~ /^\./;
+    my ($need, $cost, $class, $cards_needed) = read_deck ($cards, "$deck_dir/$file");
+    print "$file\t".ucfirst(lc($class))."\t$need\t$cost\n";
+    foreach my $name (keys $cards_needed) {
+      print "Card\t"
+            .$sets_s2l{$cards->{by_name}{$name}{set}}."\t"
+            ."$name\t"
+            .$cards_needed->{$name}{needed}."\t"
+            .$cards_needed->{$name}{cost}."\n";
+    }
+  }
+  closedir $DECKS;
+}
+
 sub print_stats {
-  my ($cards, $label) = @_;
+  my ($cards, $label, $filters, $details) = @_;
   my $type_counts = $cards->{type_counts};
 
   my $total_missing = 0;
@@ -732,10 +773,12 @@ sub print_stats {
   printf $label_fmt." : %10s : %15s : %6s : %5s : %6s : %6s\n",
          "-"x$labels_max{$label},"-"x10,"-"x17,"-"x6,"-"x5,"-"x6,"-"x6;
   foreach my $l (@{$labels{$label}}) {
+    next if scalar keys %{$filters->{$label}} gt 0 and not exists $filters->{$label}{$l};
     my $total_missing_by_label = 0;
     my $total_for_complete_by_label = 0;
     my $total_cost_by_label = 0;
     foreach my $rarity (@rarities) {
+      next if scalar keys %{$filters->{by_rarity}} gt 0 and not exists $filters->{by_rarity}{$rarity};
       my $still_need;
       my $total;
       if ($rarity eq 'LEGENDARY') {
@@ -767,6 +810,37 @@ sub print_stats {
           $cost;
       }
     }
+
+    if (defined ($details)) {
+      printf $label_fmt." : %10s : %15s : %6s : %5s : %6s : %6s\n",
+             "-"x$labels_max{$label},"-"x10,"-"x17,"-"x6,"-"x5,"-"x6,"-"x6;
+      my $longest = 0;
+      foreach my $rarity (@rarities) {
+        my $num_missing = scalar keys %{$type_counts->{$label}{$l}{$rarity}{missing}};
+        $longest = $num_missing > $longest ? $num_missing : $longest;
+      }
+
+      my $name_fmt = (sprintf "%-%%ds", $cards->{label_max}{by_name});
+      for (my $i = 0; $i < $longest; $i++) {
+        foreach my $rarity (@rarities) {
+          next if $rarity eq 'FREE';
+          my @k = keys %{$type_counts->{$label}{$l}{$rarity}{missing}};
+          if (defined $k[$i]) {
+            my $m = $k[$i];
+            printf $name_fmt." x%1d : ",$m,$type_counts->{$label}{$l}{$rarity}{missing}{$m};
+          } else {
+            printf $name_fmt."    : "," ";
+          }
+        }
+        print "\n";
+      }
+#      foreach my $rarity (@rarities) {
+#        foreach my $m (keys %{$type_counts->{$label}{$l}{$rarity}{missing}}) {
+#          printf "%2dx %".$cards->{label_max}{by_name}."s :\n",$type_counts->{$label}{$l}{$rarity}{missing}{$m},$m;
+#        }
+#      }
+    }
+
 
     $total_missing += $total_missing_by_label;
     $total_for_complete += $total_for_complete_by_label;
@@ -817,12 +891,20 @@ my $by_class = 0;
 my $by_decks = 0;
 my $buy = 0;
 my $rebuild = 0;
+my $dump = 0;
+my $filters_opt = undef;
+my $verbose_opt = undef;
+my $details_opt = undef;
 
 GetOptions (
   "help" => sub { pod2usage(-exitval => 1, -output => \*STDOUT, -verbose => 1); },
   "man" => sub { pod2usage(-exitval => 2, -output => \*STDOUT, -verbose => 2); },
+  "verbose" => \$verbose_opt,
+  "filters=s" => \$filters_opt,
   "fetch" => \$fetch,
+  "details" => \$details_opt,
   "deck_dir=s" => \$deck_dir,
+  "dump" => \$dump,
   "db=s" => \$db_file,
   "de" => \$de,
   "class=s" => \$class,
@@ -833,6 +915,35 @@ GetOptions (
 ) or pod2usage (2);
 
 my $deck = shift;
+my $filters = { 'by_class' => {},
+                'by_set' => {},
+                'by_rarity' => {},
+              };
+if (defined ($filters_opt)) {
+  foreach my $f (split /,/, $filters_opt) {
+    my $n = uc($f);
+    foreach my $c (@classes) {
+      $filters->{by_class}{$c} = 1 if ($c eq $n);
+    }
+    foreach my $r (@rarities) {
+      $filters->{by_rarity}{$r} = 1 if ($r eq $n);
+    }
+    foreach my $s (keys %sets_s2l) {
+      my $l = $sets_s2l{$s};
+      if (   $f eq $s
+          or $n eq $s
+          or $f eq $l
+          or $n eq $l) {
+        $filters->{by_set}{$s} = 1;
+      }
+    }
+  }
+}
+# filtering by class currently disables filtering by set
+if (scalar keys %{$filters->{by_class}} gt 0) {
+  $by_class = 1;
+  $filters->{by_set} = {};
+}
 
 if ($fetch or ! -f $json_file) {
   fetch_json ($json_file);
@@ -845,6 +956,11 @@ if (! -f $db_file
   write_db ($db_file, $cards);
 }
 $cards = enhance ($cards);
+
+if ($dump) {
+  print Dumper($cards)."\n";
+  exit 0;
+}
 
 if ($buy) {
   to_buy ($cards);
@@ -859,18 +975,9 @@ if ($de) {
 if (defined ($deck)) {
   print_deck ($cards, $deck);
 } elsif ($by_decks) {
-  opendir (my $DECKS, $deck_dir) or die "can't opendir deck dir $deck_dir : $!";
-  while (my $file = readdir $DECKS) {
-    next if $file =~ /^\./;
-    my ($need, $cost, $class, $cards_needed) = read_deck ($cards, "$deck_dir/$file");
-    print "$file\t$class\t$need\t$cost\n";
-    foreach my $name (keys $cards_needed) {
-      print "Card\t".$cards->{by_name}{$name}{set}."\t$name\t".$cards_needed->{$name}{needed}."\t".$cards_needed->{$name}{cost}."\n";
-    }
-  }
-  closedir $DECKS;
+  print_decks ($cards, $deck_dir);
 } else {
-  print_stats ($cards, $by_class ? 'by_class' : 'by_set');
+  print_stats ($cards, $by_class ? 'by_class' : 'by_set', $filters, $details_opt);
 }
 
 exit 0;
