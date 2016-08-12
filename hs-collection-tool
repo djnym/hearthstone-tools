@@ -10,7 +10,7 @@ use Pod::Usage;
 
 
 my @collectable_sets = ('EXPERT1', 'TGT', 'OG');
-my @release_order = ('CORE','EXPERT1','PROMO','REWARD', 'NAXX','GVG','BRM','TGT','LOE','OG');
+my @release_order = ('CORE','EXPERT1','PROMO','REWARD', 'NAXX','GVG','BRM','TGT','LOE','OG', 'KARA');
 my %format = ('CORE' => 'STANDARD',
               'EXPERT1' => 'STANDARD',
               'NAXX' => 'WILD',
@@ -19,6 +19,7 @@ my %format = ('CORE' => 'STANDARD',
               'TGT' => 'STANDARD',
               'LOE' => 'STANDARD',
               'OG' => 'STANDARD',
+              'KARA' => 'STANDARD',
               'PROMO' => 'WILD',
               'REWARD' => 'WILD');
 my %sets_s2l = ('CORE' => 'Basic',
@@ -29,6 +30,7 @@ my %sets_s2l = ('CORE' => 'Basic',
                 'TGT' => 'The Grand Tournament',
                 'LOE' => 'League of Explorers',
                 'OG' => 'Whispers of the Old Gods',
+                'KARA' => 'One Night in Karazhan',
                 'PROMO' => 'Promotion',
                 'REWARD' => 'Reward');
 my %sets_l2s = ('Basic' => 'CORE',
@@ -39,6 +41,7 @@ my %sets_l2s = ('Basic' => 'CORE',
                 'The Grand Tournament' => 'TGT',
                 'League of Explorers' => 'LOE',
                 'Whispers of the Old Gods' => 'OG',
+                'One Night in Karazhan' => 'KARA',
                 'Promotion' => 'PROMO',
                 'Reward' => 'REWARD');
 my @classes = ('DRUID',
