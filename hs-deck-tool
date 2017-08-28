@@ -1,0 +1,261 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use JSON::PP;
+use Data::Dumper;
+use MIME::Base64;
+
+my $dbfid_file = "d2n.txt";
+my $dbfid_2_name = {};
+my $name_2_dbfid = {};
+my $dbfid_2_class = {};
+my $dbfid_2_set = {};
+my $class_2_hero = {
+  'DRUID' => 'Malfurion Stormrage',
+  'HUNTER' => 'Rexxar',
+  'MAGE' => 'Jaina Proudmoore',
+  'PALADIN' => 'Uther Lightbringer',
+  'PRIEST' => 'Anduin Wrynn',
+  'ROGUE' => 'Valeera Sanguinar',
+  'SHAMAN' => 'Thrall',
+  'WARLOCK' => 'Gul\'dan',
+  'WARRIOR' => 'Garrosh Hellscream'
+};
+my $set_2_format = {
+  'BRM' => 'WILD',
+  'CORE' => 'STANDARD',
+  'EXPERT1' => 'STANDARD',
+  'GANGS' => 'STANDARD',
+  'GVG' => 'WILD',
+  'HOF' => 'WILD',
+  'KARA' => 'STANDARD',
+  'LOE' => 'WILD',
+  'NAXX' => 'WILD',
+  'OG' => 'STANDARD',
+  'TGT' => 'WILD',
+  'UNGORO' => 'STANDARD'
+};
+my $format_2_enum = {
+  'UNKNOWN' => 0,
+  'WILD' => 1,
+  'STANDARD' => 2
+};
+
+my @formats = ('UNKNOWN','WILD','STANDARD');
+
+sub build_dbf {
+  my ($file) = @_;
+
+  `cat cards.collectible.json| jq -r '.[] | [ .dbfId, .name, .cardClass, .set] | \@tsv' > $file`;
+}
+
+sub load_dbf {
+  my ($file) = @_;
+  # if we have a db file load it
+  if (-f $file ) {
+     open IDS, "< $file" or die "can't open $!\n";
+     while (my $line = <IDS>) {
+       chomp $line;
+       my ($id, $name, $class, $set) = split /\t/, $line;
+       $dbfid_2_name->{$id} = $name;
+       $dbfid_2_set->{$id} = $set;
+       $dbfid_2_class->{$id} = $class;
+       $name_2_dbfid->{$name} = $id;
+     }
+     close IDS;
+  }
+}
+
+# inspiration for read/write varint from
+# https://github.com/peterkeen/protobuf-perl-experimental/blob/master/varint-test.pl
+sub read_varint {
+  my ($bytes) = @_;
+  my $result = 0;
+  my $count = 0;
+  my $b;
+  do {
+    return undef if $count > 10;
+    $b = shift @{$bytes};
+    $result |= ($b & 0x7F) << (7 * $count);
+    $count++;
+  } while ($b & 0x80);
+  return $result;
+}
+
+sub write_varint {
+  my ($value, $bytesin) = @_;
+  while ($value > 0x7F) {
+    push @{$bytesin}, $value & 0x7F | 0x80;
+    $value >>= 7;
+  }
+  push @{$bytesin}, $value & 0x7F;
+}
+
+sub read_arr {
+  my ($bytes) = @_;
+  my $len = read_varint ($bytes);
+  my $result = ();
+  while (defined $len and $len > 0) {
+    my $h = read_varint ($bytes);
+    push @{$result}, $h;
+    $len--;
+  }
+  return $result;
+}
+
+sub write_arr {
+  my ($arr, $bytesin) = @_;
+  # write zero length arrays
+  if (! defined $arr) {
+    write_varint (0, $bytesin);
+    return;
+  }
+  my $len = scalar @{$arr};
+  write_varint ($len, $bytesin);
+  while ($len > 0) {
+    write_varint (shift @{$arr}, $bytesin);
+    $len--;
+  }
+}
+
+sub read_hash {
+  my ($bytes) = @_;
+  my $len = read_varint ($bytes);
+  my $results = {};
+  while ($len > 0) {
+    my $i = read_varint ($bytes);
+    my $c = read_varint ($bytes);
+    $results->{$i} = $c;
+    $len--;
+  }
+  return $results;
+}
+
+sub write_hash {
+  my ($hash, $bytesin) = @_;
+  my $len = scalar keys %{$hash};
+  write_varint ($len, $bytesin);
+  foreach my $i (sort { $a <=> $b } keys %{$hash}) {
+    write_varint ($i, $bytesin);
+    write_varint ($hash->{$i}, $bytesin);
+  }
+}
+
+sub deck_from_file {
+  my ($deck_file) = @_;
+  my $deck = {};
+
+  open DECK, "< $deck_file" or die "can't open $!\n";
+  while (my $line = <DECK>) {
+    next if $line =~ m/^#/;
+    # deal with dos
+    $line =~ s/([^\r\n]+)(\r|\n)$/$1/;
+    chomp $line;
+    # cockatrice format with or without x
+    # 2 <card name>
+    # or
+    # 2x <card name>
+    if ($line =~ m/^(\d+)(x?)\s(.*)$/) {
+      $deck->{$3} = $1;
+    } else {
+      # just card name per line
+      $deck->{$line}++;
+    }
+  }
+  close DECK;
+  return $deck;
+}
+
+load_dbf ($dbfid_file);
+
+my $deckstr = shift;
+unless (defined $deckstr) {
+  print STDERR "Usage: deck-tool [deckstring | deck file]\n";
+  exit 1;
+}
+
+if ( ! -f $deckstr ) {
+  my $decoded = decode_base64 ($deckstr);
+
+  my @bytes = unpack('C*', $decoded);
+  my $reserved = shift @bytes;
+  my $version = read_varint (\@bytes);
+  my $format = read_varint (\@bytes);
+  print "# Format  : ".$formats[$format]."\n";
+  my $heroes = read_arr (\@bytes);
+  print "# Heroes  : ".join(",", map { $dbfid_2_name->{$_} } @{$heroes})."\n";
+
+  my $singles = read_arr (\@bytes);
+  if (defined $singles and scalar @{$singles} > 0) {
+    print "1x ".join("\n1x ", map { $dbfid_2_name->{$_} } @{$singles})."\n";
+  }
+
+  my $doubles = read_arr (\@bytes);
+  if (defined $doubles and scalar @{$doubles} > 0) {
+    print "2x ".join("\n2x ", map { $dbfid_2_name->{$_} } @{$doubles})."\n";
+  }
+
+  my $many = read_hash (\@bytes);
+  foreach my $i (keys %{$many}) {
+    print $many->{$i}."x ".$dbfid_2_name->{$i}."\n";
+  }
+} else {
+  my $deck = deck_from_file ($deckstr);
+  my $counts = {};
+  my $classes = {};
+  my $types = {};
+  my $format = 'STANDARD';
+  foreach my $n (keys %{$deck}) {
+    my $c = $deck->{$n};
+    my $i = $name_2_dbfid->{$n};
+    unless (defined $i) {
+      print STDERR "name [$n] is not in card list!\n";
+      exit 1;
+    }
+    my $cl = $dbfid_2_class->{$i};
+    my $s = $dbfid_2_set->{$i};
+    my $f = $set_2_format->{$s};
+    if ($cl ne 'NEUTRAL') {
+      $classes->{$class_2_hero->{$cl}}++;
+    }
+    if ($f eq 'WILD' ) {
+      $format = 'WILD';
+    }
+    if ($c le 2) {
+      unless (exists $counts->{$c}) {
+        $counts->{$c} = [];
+      }
+      push @{$counts->{$c}}, $name_2_dbfid->{$n};
+    } else {
+      unless (exists $counts->{n}) {
+        $counts->{n} = {};
+      }
+      $counts->{n}{$name_2_dbfid->{$n}} = $c;
+    }
+  }
+  my $heroes = ();
+  foreach my $h (sort keys %{$classes}) {
+    push @{$heroes}, $name_2_dbfid->{$h};
+  }
+
+#  print Dumper($counts);
+#  print Dumper($heroes);
+
+  my $bytes = ();
+  push @{$bytes}, 0x00;
+  write_varint (0x01, $bytes);
+  write_varint ($format_2_enum->{$format}, $bytes);
+  write_arr ($heroes, $bytes);
+  write_arr ($counts->{1}, $bytes);
+  write_arr ($counts->{2}, $bytes);
+  write_hash ($counts->{n}, $bytes);
+
+  my $ba = pack "C*", @{$bytes};
+#  print Dumper($ba);
+  my $encoded = encode_base64($ba,"");
+  print $encoded."\n";
+}
+
+
+0;
