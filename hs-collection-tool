@@ -9,19 +9,26 @@ use Getopt::Long;
 use Pod::Usage;
 
 
-my @collectable_sets = ('EXPERT1', 'TGT', 'OG');
-my @release_order = ('CORE','EXPERT1','PROMO','REWARD', 'NAXX','GVG','BRM','TGT','LOE','OG', 'KARA');
+my @collectable_sets = ('EXPERT1', 'OG', 'GANGS', 'UNGORO', 'ICECROWN');
+my @release_order = ('CORE','EXPERT1',
+                     'NAXX','GVG',
+                     'BRM','TGT','LOE',
+                     'OG','KARA','GANGS',
+                     'HOF', 'UNGORO', 'ICECROWN');
 my %format = ('CORE' => 'STANDARD',
               'EXPERT1' => 'STANDARD',
               'NAXX' => 'WILD',
               'GVG' => 'WILD',
-              'BRM' => 'STANDARD',
-              'TGT' => 'STANDARD',
-              'LOE' => 'STANDARD',
+              'BRM' => 'WILD',
+              'TGT' => 'WILD',
+              'LOE' => 'WILD',
               'OG' => 'STANDARD',
               'KARA' => 'STANDARD',
-              'PROMO' => 'WILD',
-              'REWARD' => 'WILD');
+              'GANGS' => 'STANDARD',
+              'HOF' => 'WILD',
+              'UNGORO' => 'STANDARD',
+              'ICECROWN' => 'STANDARD'
+            );
 my %sets_s2l = ('CORE' => 'Basic',
                 'EXPERT1' => 'Classic',
                 'NAXX' => 'Naxxramas',
@@ -31,8 +38,11 @@ my %sets_s2l = ('CORE' => 'Basic',
                 'LOE' => 'League of Explorers',
                 'OG' => 'Whispers of the Old Gods',
                 'KARA' => 'One Night in Karazhan',
-                'PROMO' => 'Promotion',
-                'REWARD' => 'Reward');
+                'GANGS' => 'Mean Streets of Gadgetzan',
+                'UNGORO' => 'Journey to Un\'Goro',
+                'HOF' => 'Hall of Fame',
+                'ICECROWN' => 'Frozen Throne'
+               );
 my %sets_l2s = ('Basic' => 'CORE',
                 'Classic' => 'EXPERT1',
                 'Naxxramas' => 'NAXX',
@@ -42,8 +52,11 @@ my %sets_l2s = ('Basic' => 'CORE',
                 'League of Explorers' => 'LOE',
                 'Whispers of the Old Gods' => 'OG',
                 'One Night in Karazhan' => 'KARA',
-                'Promotion' => 'PROMO',
-                'Reward' => 'REWARD');
+                'Mean Streets of Gadgetzan' => 'GANGS',
+                'Journey to Un\'Goro' => 'UNGORO',
+                'Hall of Fame' => 'HOF',
+                'Frozen Throne' =>'ICECROWN'
+              );
 my @classes = ('DRUID',
                'HUNTER',
                'MAGE',
@@ -53,7 +66,8 @@ my @classes = ('DRUID',
                'SHAMAN',
                'WARLOCK',
                'WARRIOR',
-               'NEUTRAL');
+               'NEUTRAL'
+              );
 my @card_type = ('HERO',
                  'WEAPON',
                  'SPELL',
@@ -63,7 +77,8 @@ my @rarities = ('FREE',
                 'COMMON',
                 'RARE',
                 'EPIC',
-                'LEGENDARY');
+                'LEGENDARY'
+               );
 my $free_not_common =  { "Ironbark Protector" => 1,
                          "Moonfire" => 1,
                          "Savage Roar" => 1,
@@ -179,7 +194,7 @@ sub fetch_json {
   my ($json_file) = @_;
   # fetch all the card data from hearthstonejson.com
   my $url = "https://api.hearthstonejson.com/v1/latest/enUS/cards.collectible.json";
-  `curl $url > $json_file`;
+  `curl -L $url > $json_file`;
 }
 
 sub dump_json {
@@ -230,7 +245,7 @@ sub init_db {
   my $db_raw = {};
   foreach my $card (@{$ref}) {
     if (! exists $sets_s2l{$card->{set}}  # skip cards not in a known set
-        or $card->{type} eq "HERO"        # as well as HERO cards
+        or ( $card->{type} eq "HERO" and not defined $card->{cost} ) # as well as HERO cards
        ) {
       next;
     }
