@@ -9,12 +9,13 @@ use Getopt::Long;
 use Pod::Usage;
 
 
-my @collectable_sets = ('EXPERT1', 'OG', 'GANGS', 'UNGORO', 'ICECROWN');
+my @collectable_sets = ('EXPERT1', 'OG', 'GANGS', 'UNGORO', 'ICECROWN','LOOTAPALOOZA');
 my @release_order = ('CORE','EXPERT1',
                      'NAXX','GVG',
                      'BRM','TGT','LOE',
                      'OG','KARA','GANGS',
-                     'HOF', 'UNGORO', 'ICECROWN');
+                     'HOF', 'UNGORO',
+                     'ICECROWN', 'LOOTAPALOOZA');
 my %format = ('CORE' => 'STANDARD',
               'EXPERT1' => 'STANDARD',
               'NAXX' => 'WILD',
@@ -27,7 +28,8 @@ my %format = ('CORE' => 'STANDARD',
               'GANGS' => 'STANDARD',
               'HOF' => 'WILD',
               'UNGORO' => 'STANDARD',
-              'ICECROWN' => 'STANDARD'
+              'ICECROWN' => 'STANDARD',
+              'LOOTAPALOOZA' => 'STANDARD'
             );
 my %sets_s2l = ('CORE' => 'Basic',
                 'EXPERT1' => 'Classic',
@@ -41,7 +43,8 @@ my %sets_s2l = ('CORE' => 'Basic',
                 'GANGS' => 'Mean Streets of Gadgetzan',
                 'UNGORO' => 'Journey to Un\'Goro',
                 'HOF' => 'Hall of Fame',
-                'ICECROWN' => 'Frozen Throne'
+                'ICECROWN' => 'Frozen Throne',
+                'LOOTAPALOOZA' => 'Kobolds and Catacombs'
                );
 my %sets_l2s = ('Basic' => 'CORE',
                 'Classic' => 'EXPERT1',
@@ -55,7 +58,8 @@ my %sets_l2s = ('Basic' => 'CORE',
                 'Mean Streets of Gadgetzan' => 'GANGS',
                 'Journey to Un\'Goro' => 'UNGORO',
                 'Hall of Fame' => 'HOF',
-                'Frozen Throne' =>'ICECROWN'
+                'Frozen Throne' => 'ICECROWN',
+                'Kobolds and Catacombs' => 'LOOTAPALOOZA'
               );
 my @classes = ('DRUID',
                'HUNTER',
@@ -432,6 +436,7 @@ sub print_de {
   my ($cards) = @_;
   my $total_de = 0;
 
+#  print Dumper($cards);
   printf "%5s\t%-7s\t%-30s\n", "Cost", "Class", "Card";
   printf "%5s\t%7s\t%30s\n", "-"x5, "-"x7, "-"x30;
   foreach my $n (@{$cards->{order}}) {
@@ -440,9 +445,11 @@ sub print_de {
     my $number = $e->{number};
     my $golden = $e->{golden};
     my $class = ucfirst(lc($e->{class}));
-    my $dust = $e->{dust};
-    if (defined $dust and $number >= 2 and $golden > 0) {
-      my $de_value = $dust->[3] * $golden;
+#    my $dust = $e->{dust};
+    if ($rarity ne 'FREE' and
+         ($rarity eq 'LEGENDARY' and $number >= 1 and $golden > 0 )
+         or ($number >= 2 and $golden > 0)) {
+      my $de_value = $golden_de_costs->{$rarity} * $golden;
       $total_de += $de_value;
       printf "%5d\t%7s\t%s\n", $de_value, $class, $n;
     }
