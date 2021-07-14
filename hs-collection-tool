@@ -768,7 +768,9 @@ sub print_deck {
 sub print_decks {
   my ($cards, $deck_dir) = @_;
   opendir (my $DECKS, $deck_dir) or die "can't opendir deck dir $deck_dir : $!";
-  while (my $file = readdir $DECKS) {
+  my @files = readdir $DECKS;
+  closedir $DECKS;
+  foreach my $file (sort @files) {
     next if $file =~ /^\./;
     my ($need, $cost, $class, $cards_needed) = read_deck ($cards, "$deck_dir/$file");
     print "$file\t".ucfirst(lc($class))."\t$need\t$cost\n";
@@ -780,7 +782,6 @@ sub print_decks {
             .$cards_needed->{$name}{cost}."\n";
     }
   }
-  closedir $DECKS;
 }
 
 sub print_stats {
